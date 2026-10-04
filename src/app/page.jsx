@@ -102,6 +102,8 @@ export default function ColorCardsApp() {
     }
 
     p2pManager.off('ROOM_STATE_UPDATED');
+    p2pManager.off('GAME_STARTED');
+    p2pManager.off('GAME_STATE_UPDATED');
     p2pManager.off('EMOTE_RECEIVED');
     p2pManager.off('CHAT_RECEIVED');
 
@@ -110,6 +112,17 @@ export default function ColorCardsApp() {
       if (updatedRoom.status === 'playing') {
         setView('game');
       }
+    });
+
+    p2pManager.on('GAME_STARTED', ({ roomState, game: g }) => {
+      setOnlineRoom(roomState);
+      setGameState(g);
+      setGameMode('online');
+      setView('game');
+    });
+
+    p2pManager.on('GAME_STATE_UPDATED', (g) => {
+      setGameState(g);
     });
 
     p2pManager.on('EMOTE_RECEIVED', ({ playerId, emoji }) => {
@@ -251,7 +264,13 @@ export default function ColorCardsApp() {
     }
     if (onlineRoom) {
       const targetCount = onlineRoom.maxPlayers || 4;
-      const players = [...onlineRoom.players];
+      const players = onlineRoom.players.map(p => ({
+        id: p.id || p.socketId,
+        name: p.name,
+        isBot: !!p.isBot,
+        botDifficulty: p.botDifficulty || 'medium',
+        avatar: p.avatar || '🐼'
+      }));
       const botNames = ['Bot Nova 🤖', 'Bot Pixel 👾', 'Bot Luna ⚡'];
 
       while (players.length < targetCount) {
@@ -266,11 +285,14 @@ export default function ColorCardsApp() {
         });
       }
 
+      const updatedRoom = { ...onlineRoom, status: 'playing' };
       const state = createGame({ players });
       setGameState(state);
-      setUserPlayerId(onlineRoom.players[0]?.id || 'p1');
-      setGameMode('bot');
+      setUserPlayerId(p2pManager.myId || onlineRoom.players[0]?.id || 'p1');
+      setGameMode('online');
       setView('game');
+
+      p2pManager.broadcast('GAME_STARTED', { roomState: updatedRoom, game: state });
     }
   }
 

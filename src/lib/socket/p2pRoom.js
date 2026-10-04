@@ -226,6 +226,14 @@ class P2PRoomManager {
     }
   }
 
+  sendAction(type, payload) {
+    if (this.isHost) {
+      this.broadcast(type, payload);
+    } else if (this.hostConnection && this.hostConnection.open) {
+      this.hostConnection.send({ type, payload: { ...payload, socketId: this.myId } });
+    }
+  }
+
   sendToHost(type, payload) {
     if (this.hostConnection && this.hostConnection.open) {
       this.hostConnection.send({ type, payload: { ...payload, socketId: this.myId } });
