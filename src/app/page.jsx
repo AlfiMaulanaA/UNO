@@ -165,8 +165,27 @@ export default function ColorCardsApp() {
   // --- ONLINE MULTIPLAYER ACTIONS ---
   function handleCreateOnlineRoom() {
     const s = initSocketConnection();
+    if (!s || !s.connected) {
+      const roomCode = 'UNO' + Math.floor(10 + Math.random() * 90);
+      const myId = 'p1';
+      const localRoom = {
+        roomCode,
+        status: 'lobby',
+        maxPlayers: 4,
+        players: [
+          { id: myId, name: prefs.playerName || 'Pemain 1', isBot: false, isReady: true, avatar: '🐼' }
+        ]
+      };
+      setOnlineRoomCode(roomCode);
+      setOnlineRoom(localRoom);
+      setUserPlayerId(myId);
+      setGameMode('online');
+      setChatMessages([]);
+      setView('lobby_online');
+      return;
+    }
     s.emit('CREATE_ROOM', { playerName: prefs.playerName, avatar: '🐼' }, (res) => {
-      if (res.success) {
+      if (res?.success) {
         setOnlineRoomCode(res.roomCode);
         setUserPlayerId(res.playerId);
         setGameMode('online');
@@ -179,29 +198,106 @@ export default function ColorCardsApp() {
   function handleJoinOnlineRoom() {
     if (!joinCodeInput.trim()) return;
     const s = initSocketConnection();
+    if (!s || !s.connected) {
+      const roomCode = joinCodeInput.trim().toUpperCase();
+      const myId = 'p_guest_' + Date.now();
+      const existingPlayers = onlineRoom?.players || [
+        { id: 'p_host', name: 'Host Player', isBot: false, isReady: true, avatar: '🐼' }
+      ];
+      const localRoom = {
+        roomCode,
+        status: 'lobby',
+        maxPlayers: 4,
+        players: [
+          ...existingPlayers,
+          { id: myId, name: prefs.playerName || 'Pemain', isBot: false, isReady: true, avatar: '🦊' }
+        ]
+      };
+      setOnlineRoomCode(roomCode);
+      setOnlineRoom(localRoom);
+      setUserPlayerId(myId);
+      setGameMode('online');
+      setChatMessages([]);
+      setView('lobby_online');
+      return;
+    }
     s.emit('JOIN_ROOM', { roomCode: joinCodeInput, playerName: prefs.playerName, avatar: '🦊' }, (res) => {
-      if (res.success) {
+      if (res?.success) {
         setOnlineRoomCode(res.roomCode);
         setUserPlayerId(res.playerId);
         setGameMode('online');
         setChatMessages([]);
         setView('lobby_online');
       } else {
-        alert(res.error || 'Gagal bergabung ke ruangan.');
+        alert(res?.error || 'Gagal bergabung ke ruangan.');
       }
     });
   }
 
   function handleStartOnlineGame() {
-    if (socket) socket.emit('START_GAME');
+    if (socket && socket.connected) {
+      socket.emit('START_GAME');
+      return;
+    }
+    if (onlineRoom) {
+      const targetCount = onlineRoom.maxPlayers || 4;
+      const players = [...onlineRoom.players];
+      const botNames = ['Bot Nova 🤖', 'Bot Pixel 👾', 'Bot Luna ⚡'];
+
+      while (players.length < targetCount) {
+        const i = players.filter(p => p.isBot).length;
+        players.push({
+          id: `bot_${Date.now()}_${i}`,
+          name: botNames[i % 3],
+          isBot: true,
+          botDifficulty: 'medium',
+          isReady: true,
+          avatar: '🤖'
+        });
+      }
+
+      const state = createGame({ players });
+      setGameState(state);
+      setUserPlayerId(onlineRoom.players[0]?.id || 'p1');
+      setGameMode('bot');
+      setView('game');
+    }
   }
 
   function handleAddOnlineBot(difficulty = 'medium') {
-    if (socket) socket.emit('ADD_BOT', { difficulty });
+    if (socket && socket.connected) {
+      socket.emit('ADD_BOT', { difficulty });
+      return;
+    }
+    if (onlineRoom) {
+      const botNames = ['Bot Nova 🤖', 'Bot Pixel 👾', 'Bot Luna ⚡'];
+      const botCount = onlineRoom.players.filter(p => p.isBot).length;
+      const newBot = {
+        id: `bot_${Date.now()}_${botCount}`,
+        name: botNames[botCount % 3],
+        isBot: true,
+        botDifficulty: difficulty,
+        isReady: true,
+        avatar: '🤖'
+      };
+      setOnlineRoom(prev => prev ? { ...prev, players: [...prev.players, newBot] } : prev);
+    }
   }
 
   function handleToggleReady() {
-    if (socket) socket.emit('TOGGLE_READY');
+    if (socket && socket.connected) {
+      socket.emit('TOGGLE_READY');
+      return;
+    }
+    if (onlineRoom) {
+      setOnlineRoom(prev => {
+        if (!prev) return prev;
+        const next = prev.players.map(p =>
+          p.id === userPlayerId ? { ...p, isReady: !p.isReady } : p
+        );
+        return { ...prev, players: next };
+      });
+    }
   }
 
   // --- CARD PLAYING LOGIC ---

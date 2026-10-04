@@ -1,15 +1,20 @@
 import { io } from 'socket.io-client';
 
 let socket = null;
+export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || null;
 
 export function getSocket() {
-  if (!socket && typeof window !== 'undefined') {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
-    socket = io(socketUrl, {
-      autoConnect: true,
+  if (typeof window === 'undefined') return null;
+  if (!SOCKET_URL && window.location.hostname.includes('vercel.app')) {
+    return null;
+  }
+  if (!socket) {
+    socket = io(SOCKET_URL || undefined, {
+      autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000
+      reconnectionAttempts: 3,
+      reconnectionDelay: 1000,
+      timeout: 3000
     });
   }
   return socket;
