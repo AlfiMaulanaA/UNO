@@ -15,6 +15,7 @@ import { processBotTurn } from '../lib/uno/ai';
 import { soundFx } from '../lib/uno/audio';
 import { getStoredStats, recordGameResult, getStoredPrefs, savePrefs } from '../lib/uno/storage';
 import { getSocket } from '../lib/socket/socketClient';
+import { p2pManager } from '../lib/socket/p2pRoom';
 
 export default function ColorCardsApp() {
   // Navigation & Mode
@@ -73,29 +74,50 @@ export default function ColorCardsApp() {
     const s = getSocket();
     setSocket(s);
 
-    s.off('ROOM_STATE_UPDATED');
-    s.off('PRIVATE_HAND_UPDATED');
-    s.off('EMOTE_RECEIVED');
-    s.off('CHAT_RECEIVED');
+    if (s) {
+      s.off('ROOM_STATE_UPDATED');
+      s.off('PRIVATE_HAND_UPDATED');
+      s.off('EMOTE_RECEIVED');
+      s.off('CHAT_RECEIVED');
 
-    s.on('ROOM_STATE_UPDATED', (updatedRoom) => {
+      s.on('ROOM_STATE_UPDATED', (updatedRoom) => {
+        setOnlineRoom(updatedRoom);
+        if (updatedRoom.status === 'playing') {
+          setView('game');
+        }
+      });
+
+      s.on('PRIVATE_HAND_UPDATED', ({ hand, calledLast }) => {
+        setPrivateHand(hand);
+        setCalledLastOnline(calledLast);
+      });
+
+      s.on('EMOTE_RECEIVED', ({ playerId, emoji }) => {
+        triggerFloatingEmote(playerId, emoji);
+      });
+
+      s.on('CHAT_RECEIVED', (msg) => {
+        addChatMessage(msg.senderName, msg.message);
+      });
+    }
+
+    p2pManager.off('ROOM_STATE_UPDATED');
+    p2pManager.off('EMOTE_RECEIVED');
+    p2pManager.off('CHAT_RECEIVED');
+
+    p2pManager.on('ROOM_STATE_UPDATED', (updatedRoom) => {
       setOnlineRoom(updatedRoom);
       if (updatedRoom.status === 'playing') {
         setView('game');
       }
     });
 
-    s.on('PRIVATE_HAND_UPDATED', ({ hand, calledLast }) => {
-      setPrivateHand(hand);
-      setCalledLastOnline(calledLast);
-    });
-
-    s.on('EMOTE_RECEIVED', ({ playerId, emoji }) => {
+    p2pManager.on('EMOTE_RECEIVED', ({ playerId, emoji }) => {
       triggerFloatingEmote(playerId, emoji);
     });
 
-    s.on('CHAT_RECEIVED', (msg) => {
-      addChatMessage(msg.senderName, msg.message);
+    p2pManager.on('CHAT_RECEIVED', (msg) => {
+      addChatMessage(msg.senderName || msg.sender, msg.message || msg.text);
     });
 
     return s;
@@ -166,22 +188,18 @@ export default function ColorCardsApp() {
   function handleCreateOnlineRoom() {
     const s = initSocketConnection();
     if (!s || !s.connected) {
-      const roomCode = 'UNO' + Math.floor(10 + Math.random() * 90);
-      const myId = 'p1';
-      const localRoom = {
-        roomCode,
-        status: 'lobby',
-        maxPlayers: 4,
-        players: [
-          { id: myId, name: prefs.playerName || 'Pemain 1', isBot: false, isReady: true, avatar: '🐼' }
-        ]
-      };
-      setOnlineRoomCode(roomCode);
-      setOnlineRoom(localRoom);
-      setUserPlayerId(myId);
-      setGameMode('online');
-      setChatMessages([]);
-      setView('lobby_online');
+      p2pManager.createRoom({ hostName: prefs.playerName, avatar: '🐼' }, (res) => {
+        if (res?.success) {
+          setOnlineRoomCode(res.roomCode);
+          setOnlineRoom(res.roomState);
+          setUserPlayerId(res.playerId);
+          setGameMode('online');
+          setChatMessages([]);
+          setView('lobby_online');
+        } else {
+          alert(res?.error || 'Gagal membuat ruangan P2P.');
+        }
+      });
       return;
     }
     s.emit('CREATE_ROOM', { playerName: prefs.playerName, avatar: '🐼' }, (res) => {
@@ -199,26 +217,18 @@ export default function ColorCardsApp() {
     if (!joinCodeInput.trim()) return;
     const s = initSocketConnection();
     if (!s || !s.connected) {
-      const roomCode = joinCodeInput.trim().toUpperCase();
-      const myId = 'p_guest_' + Date.now();
-      const existingPlayers = onlineRoom?.players || [
-        { id: 'p_host', name: 'Host Player', isBot: false, isReady: true, avatar: '🐼' }
-      ];
-      const localRoom = {
-        roomCode,
-        status: 'lobby',
-        maxPlayers: 4,
-        players: [
-          ...existingPlayers,
-          { id: myId, name: prefs.playerName || 'Pemain', isBot: false, isReady: true, avatar: '🦊' }
-        ]
-      };
-      setOnlineRoomCode(roomCode);
-      setOnlineRoom(localRoom);
-      setUserPlayerId(myId);
-      setGameMode('online');
-      setChatMessages([]);
-      setView('lobby_online');
+      p2pManager.joinRoom({ roomCode: joinCodeInput, playerName: prefs.playerName, avatar: '🦊' }, (res) => {
+        if (res?.success) {
+          setOnlineRoomCode(res.roomCode);
+          setOnlineRoom(res.roomState);
+          setUserPlayerId(res.playerId);
+          setGameMode('online');
+          setChatMessages([]);
+          setView('lobby_online');
+        } else {
+          alert(res?.error || 'Gagal bergabung ke ruangan P2P.');
+        }
+      });
       return;
     }
     s.emit('JOIN_ROOM', { roomCode: joinCodeInput, playerName: prefs.playerName, avatar: '🦊' }, (res) => {
