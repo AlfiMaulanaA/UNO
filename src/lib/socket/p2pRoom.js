@@ -176,7 +176,10 @@ class P2PRoomManager {
         return;
       }
 
-      this.roomState.players.push(newPlayer);
+      this.roomState = {
+        ...this.roomState,
+        players: [...this.roomState.players, newPlayer]
+      };
       conn.send({ type: 'JOIN_RESPONSE', payload: { success: true, roomCode: this.roomCode, playerId: payload.socketId, roomState: this.roomState } });
       this.broadcast('ROOM_STATE_UPDATED', this.roomState);
       this.emit('ROOM_STATE_UPDATED', this.roomState);
